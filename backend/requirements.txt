@@ -1,0 +1,30 @@
+# FastAPI
+fastapi
+uvicorn
+
+# Environment Variables
+python-dotenv
+
+# LangChain Core
+langchain
+langchain-core
+langchain-community
+langchain-text-splitters
+langchain-groq
+
+# PDF Processing
+pypdf
+pymupdf
+pdfminer.six
+
+# Embeddings (lightweight - no torch!)
+fastembed
+
+# Vector Store
+chromadb
+
+# YouTube Transcript
+youtube-transcript-api
+
+# File Upload
+python-multipart
