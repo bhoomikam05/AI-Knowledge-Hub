@@ -98,11 +98,32 @@ def split_audio_file(input_path: str) -> list[str]:
         raise RuntimeError(f"FFmpeg audio splitting failed: {e}")
 
 
+def get_youtube_transcript_api():
+    """Initialize YouTubeTranscriptApi with proxy configuration if YOUTUBE_PROXY/HTTPS_PROXY/HTTP_PROXY is present."""
+    proxy_url = os.getenv("YOUTUBE_PROXY") or os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
+    if proxy_url and proxy_url.strip():
+        proxy_url = proxy_url.strip()
+        logger.info(f"Configuring YouTubeTranscriptApi with proxy from environment.")
+        try:
+            from youtube_transcript_api.proxies import GenericProxyConfig
+            proxy_config = GenericProxyConfig(http_url=proxy_url, https_url=proxy_url)
+            return YouTubeTranscriptApi(proxy_config=proxy_config)
+        except Exception as e:
+            logger.warning(f"Failed to initialize GenericProxyConfig: {e}. Falling back to Requests session proxy.")
+            import requests
+            session = requests.Session()
+            session.proxies = {"http": proxy_url, "https": proxy_url}
+            return YouTubeTranscriptApi(http_client=session)
+    return YouTubeTranscriptApi()
+
+
 def transcribe_audio_fallback(url: str) -> str:
     """Fallback: Download audio using yt-dlp and transcribe using Groq Speech-to-Text API."""
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise ValueError("GROQ_API_KEY environment variable is not configured.")
+
+    proxy_url = os.getenv("YOUTUBE_PROXY") or os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
 
     temp_dir = tempfile.gettempdir()
     output_base = os.path.join(temp_dir, f"videomind_{os.getpid()}_{abs(hash(url))}")
@@ -116,6 +137,10 @@ def transcribe_audio_fallback(url: str) -> str:
         'noplaylist': True,
         'max_filesize': 250 * 1024 * 1024,
     }
+
+    if proxy_url and proxy_url.strip():
+        ydl_opts['proxy'] = proxy_url.strip()
+        logger.info("Configuring yt-dlp with proxy from environment.")
 
     files_to_clean = []
     try:
@@ -205,10 +230,12 @@ def process_video(url: str):
 
     # ATTEMPT 1: YouTube Captions / Transcript API
     try:
-        try:
+        api = get_youtube_transcript_api()
+        if hasattr(api, 'fetch'):
+            transcript_list = api.fetch(video_id)
+        elif hasattr(YouTubeTranscriptApi, 'get_transcript'):
             transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-        except AttributeError:
-            api = YouTubeTranscriptApi()
+        else:
             transcript_list = api.fetch(video_id)
 
         if transcript_list:
@@ -230,7 +257,19 @@ def process_video(url: str):
         except Exception as fallback_err:
             logger.error(f"Speech-to-text fallback failed for video {url}: {fallback_err}")
             current_video_id = None
-            msg = str(fallback_err) if isinstance(fallback_err, (RuntimeError, ValueError)) else "Could not retrieve transcript or transcribe audio for this video. Please ensure the video is public and accessible."
+            is_cloud = bool(os.getenv("RENDER") or os.getenv("PORT") or os.getenv("RENDER_SERVICE_ID"))
+            has_proxy = bool(os.getenv("YOUTUBE_PROXY") or os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY"))
+
+            if is_cloud and not has_proxy:
+                msg = (
+                    "YouTube transcript access is restricted on this cloud server environment. "
+                    "If deployed on Render, please configure a YOUTUBE_PROXY environment variable or try again."
+                )
+            elif isinstance(fallback_err, (RuntimeError, ValueError)):
+                msg = str(fallback_err)
+            else:
+                msg = "Could not retrieve transcript or transcribe audio for this video. Please ensure the video is public and accessible."
+
             return {
                 "status": "error",
                 "message": msg
