@@ -265,11 +265,162 @@ import {
   Loader2,
   // YoutubeIcon,
   Sparkles,
+  ListChecks,
+  MessageSquarePlus,
 } from 'lucide-react'
 import axios from 'axios'
 
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
+const SUGGESTED_QUESTIONS = [
+  {
+    text: "Explain this in simple terms",
+    icon: Sparkles,
+    color: "from-purple-500/10 to-indigo-500/10 hover:border-purple-400/50",
+    iconColor: "text-purple-400",
+  },
+  {
+    text: "Give the key details",
+    icon: ListChecks,
+    color: "from-blue-500/10 to-cyan-500/10 hover:border-blue-400/50",
+    iconColor: "text-blue-400",
+  },
+  {
+    text: "Tell me more about this",
+    icon: MessageSquarePlus,
+    color: "from-purple-500/10 to-pink-500/10 hover:border-pink-400/50",
+    iconColor: "text-pink-400",
+  },
+]
+
+const renderInlineText = (str) => {
+  if (!str) return null
+  const cleanStr = str.replace(/^-{3,}$/g, '').trim()
+  if (!cleanStr) return null
+
+  const parts = cleanStr.split(/(\*\*[^\*]+\*\*)/g)
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={i} className="font-semibold text-white">
+          {part.slice(2, -2)}
+        </strong>
+      )
+    }
+    return part
+  })
+}
+
+const formatMessageContent = (text) => {
+  if (!text) return null
+
+  const blocks = text.split(/\n\n+/)
+
+  return blocks.map((block, pIdx) => {
+    const lines = block.split('\n').map(l => l.trim()).filter(Boolean)
+    if (lines.length === 0) return null
+
+    // Table rendering
+    const tableLines = lines.filter(l => l.startsWith('|') && l.endsWith('|'))
+    if (tableLines.length >= 2) {
+      const headerRow = tableLines[0].split('|').map(c => c.trim()).filter(Boolean)
+      const dataRows = tableLines.slice(1)
+        .filter(l => !l.includes('---'))
+        .map(l => l.split('|').map(c => c.trim()).filter(Boolean))
+
+      return (
+        <div key={pIdx} className="my-3 overflow-x-auto rounded-xl border border-[#2e2e3e] bg-[#141420]">
+          <table className="w-full text-xs text-gray-200 border-collapse">
+            <thead>
+              <tr className="bg-[#1e1e2e] border-b border-[#2e2e3e]">
+                {headerRow.map((h, i) => (
+                  <th key={i} className="px-3 py-2 text-left font-semibold text-purple-300">
+                    {h.replace(/\*\*/g, '')}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dataRows.map((row, rIdx) => (
+                <tr key={rIdx} className="border-b border-[#2e2e3e]/50 last:border-0 hover:bg-[#1b1b2a]">
+                  {row.map((cell, cIdx) => (
+                    <td key={cIdx} className="px-3 py-2 text-gray-300">
+                      {renderInlineText(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+
+    // Section headings
+    const firstLine = lines[0]
+    const headingMatch = firstLine.match(/^(?:\#{1,4}\s*|\*{2})([^\*]+)(?:\*{2})?$/)
+    if (headingMatch && lines.length === 1 && !firstLine.includes(':')) {
+      const headingText = headingMatch[1].trim()
+      return (
+        <h3 key={pIdx} className="text-sm font-bold text-purple-300 mt-4 mb-2 uppercase tracking-wider">
+          {headingText}
+        </h3>
+      )
+    }
+
+    // Bullet/Numbered lists
+    const isList = lines.every(l => /^[\*\-•]\s|^\d+[\.\)]\s/.test(l))
+    if (isList) {
+      return (
+        <ul key={pIdx} className="space-y-1.5 my-2">
+          {lines.map((l, lIdx) => {
+            const cleanLine = l.replace(/^[\*\-•]\s*|^\d+[\.\)]\s*/, '')
+            return (
+              <li key={lIdx} className="flex items-start gap-2 text-sm text-gray-200">
+                <span className="text-purple-400 font-bold mt-0.5 text-xs shrink-0">•</span>
+                <span className="flex-1">{renderInlineText(cleanLine)}</span>
+              </li>
+            )
+          })}
+        </ul>
+      )
+    }
+
+    // Paragraph block
+    return (
+      <div key={pIdx} className="my-2 space-y-1 text-sm text-gray-200 leading-relaxed">
+        {lines.map((line, lIdx) => {
+          if (/^[\*\-•]\s|^\d+[\.\)]\s/.test(line)) {
+            const clean = line.replace(/^[\*\-•]\s*|^\d+[\.\)]\s*/, '')
+            return (
+              <div key={lIdx} className="flex items-start gap-2 my-1 pl-1">
+                <span className="text-purple-400 font-bold mt-0.5 text-xs shrink-0">•</span>
+                <span className="flex-1">{renderInlineText(clean)}</span>
+              </div>
+            )
+          }
+
+          const boldTitleMatch = line.match(/^(\*{2}[^\*]+\*{2}\:?)\s*(.*)/)
+          if (boldTitleMatch) {
+            const titleStr = boldTitleMatch[1].replace(/\*\*/g, '').replace(/:$/, '').trim()
+            const restStr = boldTitleMatch[2]
+            return (
+              <div key={lIdx} className="mt-3 mb-1">
+                <p className="text-xs font-bold text-purple-300 uppercase tracking-wider mb-1">
+                  {titleStr}
+                </p>
+                {restStr && <p className="text-sm text-gray-200">{renderInlineText(restStr)}</p>}
+              </div>
+            )
+          }
+
+          return <p key={lIdx}>{renderInlineText(line)}</p>
+        })}
+      </div>
+    )
+  })
+}
 
 export default function VideoMind() {
   // const navigate = useNavigate()
@@ -287,9 +438,11 @@ export default function VideoMind() {
   const chatEndRef = useRef(null)
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({
-      behavior: 'smooth',
-    })
+    if (messages.length > 0) {
+      chatEndRef.current?.scrollIntoView({
+        behavior: 'smooth',
+      })
+    }
   }, [messages])
 
   const handleProcessVideo = async () => {
@@ -316,6 +469,15 @@ export default function VideoMind() {
           data.message || 'Could not process the video.'
         )
       } else {
+        const wordCount = typeof data.word_count === 'number' ? data.word_count : 0
+        const chunkCount = typeof data.chunks === 'number' ? data.chunks : 0
+
+        if (chunkCount === 0 || wordCount === 0) {
+          setError('Could not retrieve a usable transcript or speech content for this video. Please ensure the video is public and has captions or clear audio.')
+          setVideoReady(false)
+          return
+        }
+
         setVideoReady(true)
         setVideoInfo(data)
 
@@ -324,8 +486,8 @@ export default function VideoMind() {
             role: 'assistant',
             content:
               `Video processed successfully!\n\n` +
-              `Found ${data.word_count?.toLocaleString() || 0} words ` +
-              `across ${data.chunks || 0} chunks.\n\n` +
+              `Found ${wordCount.toLocaleString()} words ` +
+              `across ${chunkCount} chunks.\n\n` +
               `You can now ask questions or click "Get Summary".`,
             sources: [],
           },
@@ -387,12 +549,13 @@ export default function VideoMind() {
     }
   }
 
-  const handleAsk = async () => {
-    if (!question.trim() || !videoReady || loading) {
+  const handleAsk = async (promptText = null) => {
+    const textToAsk = typeof promptText === 'string' ? promptText : question
+    if (!textToAsk.trim() || !videoReady || loading) {
       return
     }
 
-    const currentQuestion = question.trim()
+    const currentQuestion = textToAsk.trim()
 
     setQuestion('')
 
@@ -672,9 +835,13 @@ export default function VideoMind() {
                     }`}
                   >
 
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                      {message.content}
-                    </p>
+                    {message.role === 'user' ? (
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                        {message.content}
+                      </p>
+                    ) : (
+                      formatMessageContent(message.content)
+                    )}
 
                     {message.sources &&
                       message.sources.length > 0 && (
@@ -721,6 +888,32 @@ export default function VideoMind() {
           {/* Question Input */}
           <div className="border-t border-[#1e1e2e] p-4">
 
+            {videoReady && (
+              <div className="max-w-4xl mx-auto mb-3">
+                <p className="text-[11px] text-gray-500 font-medium mb-2 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles size={12} className="text-purple-400" />
+                  Suggested Questions
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {SUGGESTED_QUESTIONS.map(({ text, icon: Icon, color, iconColor }) => (
+                    <button
+                      key={text}
+                      onClick={() => handleAsk(text)}
+                      disabled={loading}
+                      className={`group bg-gradient-to-r ${color} bg-[#111118] border border-[#1e1e2e] rounded-xl px-3 py-2 text-left transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 flex items-center gap-2.5 cursor-pointer shadow-sm`}
+                    >
+                      <div className={`p-1.5 rounded-lg bg-[#1e1e2e]/80 ${iconColor} group-hover:scale-110 transition-transform shrink-0`}>
+                        <Icon size={14} />
+                      </div>
+                      <span className="text-xs font-medium text-gray-300 group-hover:text-white truncate flex-1">
+                        {text}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-3 max-w-4xl mx-auto">
 
               <input
@@ -742,13 +935,13 @@ export default function VideoMind() {
               />
 
               <button
-                onClick={handleAsk}
+                onClick={() => handleAsk()}
                 disabled={
                   !question.trim() ||
                   loading ||
                   !videoReady
                 }
-                className="bg-purple-500 hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl px-4 py-3 transition-all"
+                className="bg-purple-500 hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl px-4 py-3 transition-all cursor-pointer"
               >
                 <Send size={18} />
               </button>

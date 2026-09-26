@@ -23,8 +23,11 @@ fastembed
 # Vector Store
 chromadb
 
-# YouTube Transcript
+# YouTube Transcript & Audio Processing
 youtube-transcript-api
+yt-dlp
+groq
+static-ffmpeg
 
 # File Upload
 python-multipart

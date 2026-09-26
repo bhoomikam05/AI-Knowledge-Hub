@@ -4,6 +4,134 @@ import axios from 'axios'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
+const renderInlineText = (str) => {
+  if (!str) return null
+  const cleanStr = str.replace(/^-{3,}$/g, '').trim()
+  if (!cleanStr) return null
+
+  const parts = cleanStr.split(/(\*\*[^\*]+\*\*)/g)
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={i} className="font-semibold text-white">
+          {part.slice(2, -2)}
+        </strong>
+      )
+    }
+    return part
+  })
+}
+
+const formatMessageContent = (text) => {
+  if (!text) return null
+
+  const blocks = text.split(/\n\n+/)
+
+  return blocks.map((block, pIdx) => {
+    const lines = block.split('\n').map(l => l.trim()).filter(Boolean)
+    if (lines.length === 0) return null
+
+    // Table rendering
+    const tableLines = lines.filter(l => l.startsWith('|') && l.endsWith('|'))
+    if (tableLines.length >= 2) {
+      const headerRow = tableLines[0].split('|').map(c => c.trim()).filter(Boolean)
+      const dataRows = tableLines.slice(1)
+        .filter(l => !l.includes('---'))
+        .map(l => l.split('|').map(c => c.trim()).filter(Boolean))
+
+      return (
+        <div key={pIdx} className="my-3 overflow-x-auto rounded-xl border border-[#2e2e3e] bg-[#141420]">
+          <table className="w-full text-xs text-gray-200 border-collapse">
+            <thead>
+              <tr className="bg-[#1e1e2e] border-b border-[#2e2e3e]">
+                {headerRow.map((h, i) => (
+                  <th key={i} className="px-3 py-2 text-left font-semibold text-blue-300">
+                    {h.replace(/\*\*/g, '')}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dataRows.map((row, rIdx) => (
+                <tr key={rIdx} className="border-b border-[#2e2e3e]/50 last:border-0 hover:bg-[#1b1b2a]">
+                  {row.map((cell, cIdx) => (
+                    <td key={cIdx} className="px-3 py-2 text-gray-300">
+                      {renderInlineText(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+
+    // Headings
+    const firstLine = lines[0]
+    const headingMatch = firstLine.match(/^(?:\#{1,4}\s*|\*{2})([^\*]+)(?:\*{2})?$/)
+    if (headingMatch && lines.length === 1 && !firstLine.includes(':')) {
+      const headingText = headingMatch[1].trim()
+      return (
+        <h3 key={pIdx} className="text-sm font-bold text-blue-300 mt-4 mb-2 uppercase tracking-wider">
+          {headingText}
+        </h3>
+      )
+    }
+
+    // Lists
+    const isList = lines.every(l => /^[\*\-•]\s|^\d+[\.\)]\s/.test(l))
+    if (isList) {
+      return (
+        <ul key={pIdx} className="space-y-1.5 my-2">
+          {lines.map((l, lIdx) => {
+            const cleanLine = l.replace(/^[\*\-•]\s*|^\d+[\.\)]\s*/, '')
+            return (
+              <li key={lIdx} className="flex items-start gap-2 text-sm text-gray-200">
+                <span className="text-blue-400 font-bold mt-0.5 text-xs shrink-0">•</span>
+                <span className="flex-1">{renderInlineText(cleanLine)}</span>
+              </li>
+            )
+          })}
+        </ul>
+      )
+    }
+
+    // Paragraph
+    return (
+      <div key={pIdx} className="my-2 space-y-1 text-sm text-gray-200 leading-relaxed">
+        {lines.map((line, lIdx) => {
+          if (/^[\*\-•]\s|^\d+[\.\)]\s/.test(line)) {
+            const clean = line.replace(/^[\*\-•]\s*|^\d+[\.\)]\s*/, '')
+            return (
+              <div key={lIdx} className="flex items-start gap-2 my-1 pl-1">
+                <span className="text-blue-400 font-bold mt-0.5 text-xs shrink-0">•</span>
+                <span className="flex-1">{renderInlineText(clean)}</span>
+              </div>
+            )
+          }
+
+          const boldTitleMatch = line.match(/^(\*{2}[^\*]+\*{2}\:?)\s*(.*)/)
+          if (boldTitleMatch) {
+            const titleStr = boldTitleMatch[1].replace(/\*\*/g, '').replace(/:$/, '').trim()
+            const restStr = boldTitleMatch[2]
+            return (
+              <div key={lIdx} className="mt-3 mb-1">
+                <p className="text-xs font-bold text-blue-300 uppercase tracking-wider mb-1">
+                  {titleStr}
+                </p>
+                {restStr && <p className="text-sm text-gray-200">{renderInlineText(restStr)}</p>}
+              </div>
+            )
+          }
+
+          return <p key={lIdx}>{renderInlineText(line)}</p>
+        })}
+      </div>
+    )
+  })
+}
+
 export default function DocuAI() {
   const [files, setFiles] = useState([])
   const [uploading, setUploading] = useState(false)
@@ -19,15 +147,18 @@ export default function DocuAI() {
     fetchFiles()
   }, [])
 
-  // Auto scroll to bottom of chat
+  // Auto scroll to bottom of chat when messages arrive
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (messages.length > 0) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [messages])
 
   const fetchFiles = async () => {
     try {
       const res = await axios.get(`${API}/docuai/files`)
-      setFiles(res.data.files)
+      const fileList = res.data.files || []
+      setFiles(fileList)
     } catch (err) {
       console.error('Error fetching files:', err)
     }
@@ -51,7 +182,8 @@ export default function DocuAI() {
     setUploading(false)
   }
 
-  const handleDelete = async (filename) => {
+  const handleDelete = async (filename, e) => {
+    if (e) e.stopPropagation()
     try {
       await axios.delete(`${API}/docuai/files/${filename}`)
       await fetchFiles()
@@ -60,52 +192,50 @@ export default function DocuAI() {
     }
   }
 
-const handleAsk = async () => {
-  if (!question.trim()) return
-  const userQuestion = question
-  setQuestion('')
-  setMessages(prev => [...prev, { role: 'user', content: userQuestion }])
-  setLoading(true)
+  const handleAsk = async () => {
+    if (!question.trim()) return
+    const userQuestion = question
+    setQuestion('')
+    setMessages(prev => [...prev, { role: 'user', content: userQuestion }])
+    setLoading(true)
 
-  try {
-    const res = await axios.post(`${API}/docuai/ask`, { question: userQuestion })
-    setMessages(prev => [...prev, {
-      role: 'assistant',
-      content: res.data.answer,
-      sources: res.data.sources
-    }])
+    try {
+      const res = await axios.post(`${API}/docuai/ask`, {
+        question: userQuestion
+      })
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: res.data.answer,
+        sources: res.data.sources
+      }])
 
-    // Save to history
-    const historyItem = {
-      type: 'document',
-      title: files[0] || 'Document',
-      time: new Date().toLocaleString(),
-      question: userQuestion,
-      answer: res.data.answer,
-      detail: `Answer from ${res.data.sources?.join(', ') || 'uploaded document'}`
+      // Save to history
+      const historyItem = {
+        type: 'document',
+        title: 'Uploaded Documents',
+        time: new Date().toLocaleString(),
+        question: userQuestion,
+        answer: res.data.answer,
+        detail: res.data.sources && res.data.sources.length > 0 ? `Sources: ${res.data.sources.join(', ')}` : 'Uploaded documents'
+      }
+      const existing = JSON.parse(localStorage.getItem('ai_hub_history') || '[]')
+      localStorage.setItem('ai_hub_history', JSON.stringify([historyItem, ...existing]))
+
+    } catch (err) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Sorry, something went wrong. Please try again.',
+        sources: []
+      }])
     }
-    const existing = JSON.parse(localStorage.getItem('ai_hub_history') || '[]')
-    localStorage.setItem('ai_hub_history', JSON.stringify([historyItem, ...existing]))
-
-  } catch (err) {
-    setMessages(prev => [...prev, {
-      role: 'assistant',
-      content: 'Sorry, something went wrong. Please try again.',
-      sources: []
-    }])
+    setLoading(false)
   }
-  setLoading(false)
-}
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] flex flex-col">
 
       {/* Header */}
       <div className="border-b border-[#1e1e2e] px-6 py-4 flex items-center gap-4">
-        {/* <button onClick={() => navigate('/')}
-          className="text-gray-400 hover:text-white transition-colors flex items-center gap-2">
-          <ArrowLeft size={18} /> Back
-        </button> */}
         <div className="flex items-center gap-2">
           <FileText className="text-blue-400" size={20} />
           <h1 className="text-white font-bold text-lg">DocuAI</h1>
@@ -158,19 +288,26 @@ const handleAsk = async () => {
 
           {/* File List */}
           <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
-            <p className="text-gray-400 text-xs font-medium uppercase tracking-wider">
-              Uploaded Files ({files.length})
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-gray-400 text-xs font-medium uppercase tracking-wider">
+                Uploaded Files ({files.length})
+              </p>
+            </div>
             {files.length === 0 ? (
               <p className="text-gray-600 text-sm text-center mt-4">No files uploaded yet</p>
             ) : (
               files.map((file) => (
-                <div key={file}
-                  className="flex items-center gap-2 bg-[#111118] border border-[#1e1e2e] rounded-lg px-3 py-2">
-                  <FileText className="text-blue-400 shrink-0" size={14} />
-                  <span className="text-gray-300 text-xs truncate flex-1">{file}</span>
-                  <button onClick={() => handleDelete(file)}
-                    className="text-gray-600 hover:text-red-400 transition-colors shrink-0">
+                <div
+                  key={file}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 bg-[#111118] border border-[#1e1e2e] text-gray-300"
+                >
+                  <FileText className="shrink-0 text-blue-400" size={14} />
+                  <span className="text-xs truncate flex-1">{file}</span>
+                  <button
+                    onClick={(e) => handleDelete(file, e)}
+                    className="text-gray-600 hover:text-red-400 transition-colors shrink-0 p-0.5"
+                    title="Delete document"
+                  >
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -188,7 +325,7 @@ const handleAsk = async () => {
               <div className="flex-1 flex flex-col items-center justify-center text-center">
                 <FileText className="text-blue-400/30 mb-4" size={48} />
                 <p className="text-gray-400 text-lg font-medium">Ask anything about your documents</p>
-                <p className="text-gray-600 text-sm mt-2">Upload a PDF or TXT file and start chatting</p>
+                <p className="text-gray-600 text-sm mt-2">Upload PDF or TXT files and start chatting</p>
               </div>
             ) : (
               messages.map((msg, i) => (
@@ -198,10 +335,14 @@ const handleAsk = async () => {
                       ? 'bg-blue-500 text-white'
                       : 'bg-[#111118] border border-[#1e1e2e] text-gray-200'
                   }`}>
-                    <p className="text-sm leading-relaxed">{msg.content}</p>
+                    {msg.role === 'user' ? (
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                    ) : (
+                      formatMessageContent(msg.content)
+                    )}
                     {msg.sources && msg.sources.length > 0 && (
                       <div className="mt-2 pt-2 border-t border-[#2e2e3e]">
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-blue-400 font-medium">
                           Sources: {msg.sources.join(', ')}
                         </p>
                       </div>
@@ -214,7 +355,7 @@ const handleAsk = async () => {
               <div className="flex justify-start">
                 <div className="bg-[#111118] border border-[#1e1e2e] rounded-2xl px-4 py-3 flex items-center gap-2">
                   <Loader2 className="text-blue-400 animate-spin" size={16} />
-                  <span className="text-gray-400 text-sm">Thinking...</span>
+                  <span className="text-gray-400 text-sm font-medium">Searching documents & thinking...</span>
                 </div>
               </div>
             )}

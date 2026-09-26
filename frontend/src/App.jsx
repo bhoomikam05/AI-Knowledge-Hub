@@ -15,6 +15,7 @@
 
 // export default App
 
+import { useRef, useEffect } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import Sidebar from './components/layout/sidebar'
 import Home from './pages/Home'
@@ -25,11 +26,19 @@ import About from './pages/About'
 
 export default function App() {
   const location = useLocation()
+  const mainContentRef = useRef(null)
+
+  useEffect(() => {
+    if (mainContentRef.current) {
+      mainContentRef.current.scrollTop = 0
+    }
+    window.scrollTo(0, 0)
+  }, [location.pathname])
 
   return (
     <div className="flex min-h-screen bg-[#0a0a0f]">
       <Sidebar />
-      <div className="flex-1 overflow-auto">
+      <div ref={mainContentRef} className="flex-1 overflow-auto">
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/docuai" element={<DocuAI />} />

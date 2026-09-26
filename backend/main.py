@@ -35,6 +35,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # ─── Models ───────────────────────────────────────────────
 class QuestionRequest(BaseModel):
     question: str
+    filename: str | None = None
 
 
 # ─── Basic Routes ─────────────────────────────────────────
@@ -83,7 +84,7 @@ def delete_file(filename: str):
 def ask_question(request: QuestionRequest):
     """Ask a question about uploaded documents."""
     from services.docuai import get_answer
-    return get_answer(request.question)
+    return get_answer(request.question, filename=request.filename)
 
 # ─── VideoMind Routes ─────────────────────────────────────
 class VideoRequest(BaseModel):
